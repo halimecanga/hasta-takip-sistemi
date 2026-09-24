@@ -1,12 +1,10 @@
 import { ArrowLeft, CalendarPlus, Save, UserPlus, X } from 'lucide-react'
-import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import ConfirmActionModal from '../components/ConfirmActionModal'
 import InlineNotification from '../components/InlineNotification'
 import PageTitle from '../components/PageTitle'
-import { DOCTOR_NAME, nextAppointmentId, useAppointments } from '../context/AppointmentContext'
-import { patientDetails } from '../data/patientDetailsMock'
-import { patients } from '../data/mockData'
+import { appointmentsApi, patientsApi, staffApi } from '../services/api'
 import {
   formGridClass,
   formInputClass,
@@ -86,22 +84,47 @@ const buildInitialForm = (appointmentId) => ({
 
 export default function AddAppointment() {
   const navigate = useNavigate()
-  const { addAppointment, appointmentItems } = useAppointments()
-  const appointmentId = useMemo(() => nextAppointmentId(appointmentItems), [appointmentItems])
-  const initialForm = useMemo(() => buildInitialForm(appointmentId), [appointmentId])
+  const [searchParams] = useSearchParams()
+  const editId = searchParams.get('id')
+  const initialForm = useMemo(() => buildInitialForm(editId || 'Otomatik'), [editId])
   const [form, setForm] = useState(initialForm)
   const [errors, setErrors] = useState({})
   const [notification, setNotification] = useState(null)
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false)
+  const [patientOptions, setPatientOptions] = useState([])
+  const [doctors, setDoctors] = useState([])
+  const [isSaving, setIsSaving] = useState(false)
 
-  const patientOptions = useMemo(() => patients.map((patient) => {
-    const detail = patientDetails.find((item) => item.id === patient.no)
-    return {
-      ...patient,
-      email: detail?.email || '',
-      visits: detail?.visits || [],
+  useEffect(() => {
+    patientsApi.options().then(setPatientOptions).catch((error) => setNotification({ message: error.message, tone: 'error' }))
+    staffApi.doctors().then(setDoctors).catch(() => {})
+    if (editId) {
+      appointmentsApi.detail(editId).then((appointment) => {
+        setForm({
+          id: appointment.id,
+          patientNo: appointment.patientNo,
+          patient: appointment.patient,
+          phone: appointment.phone || '',
+          email: appointment.email || '',
+          dateIso: appointment.dateIso,
+          time: appointment.time,
+          type: appointment.type,
+          status: appointment.status === 'Tamamlandı' || appointment.status === 'İptal Edildi' ? appointment.status : appointment.status,
+          duration: String(appointment.duration || 30),
+          priority: appointment.priority,
+          reason: appointment.reason,
+          complaint: appointment.complaint,
+          isControl: appointment.isControl,
+          previousVisitId: appointment.previousVisitId,
+          doctorNote: appointment.doctorNote,
+          reminderMethod: appointment.reminderMethod,
+          reminderTime: appointment.reminderTime,
+          note: appointment.note,
+          doctorId: appointment.doctorId,
+        })
+      }).catch((error) => setNotification({ message: error.message, tone: 'error' }))
     }
-  }), [])
+  }, [editId])
 
   const selectedPatient = patientOptions.find((patient) => patient.no === form.patientNo)
   const isDirty = JSON.stringify(form) !== JSON.stringify(initialForm)
@@ -126,7 +149,7 @@ export default function AddAppointment() {
   }
 
   const showPatientNotice = () => {
-    setNotification({ message: 'Yeni hasta ekleme ekranı henüz hazırlanmadı.', tone: 'warning' })
+    navigate('/hastalar/yeni')
   }
 
   const inputProps = (key) => ({
@@ -168,24 +191,7 @@ export default function AddAppointment() {
     }
   }
 
-  const validateConflicts = (nextErrors) => {
-    if (!form.dateIso || !form.time || !form.duration || nextErrors.time || nextErrors.dateIso) return
-
-    const start = timeToMinutes(form.time)
-    const end = start + Number(form.duration)
-    const hasConflict = appointmentItems.some((appointment) => {
-      if (appointment.status === 'İptal Edildi') return false
-      if (appointment.dateIso !== form.dateIso) return false
-
-      const existingStart = timeToMinutes(appointment.time)
-      const existingEnd = existingStart + Number(appointment.duration || 30)
-      const samePatientSameTime = appointment.patientNo === form.patientNo && appointment.time === form.time
-
-      return samePatientSameTime || overlaps(start, end, existingStart, existingEnd)
-    })
-
-    if (hasConflict) nextErrors.time = 'Bu saat aralığında başka bir randevu bulunmaktadır.'
-  }
+  const validateConflicts = () => {}
 
   const validate = () => {
     const nextErrors = {}
@@ -206,35 +212,44 @@ export default function AddAppointment() {
     return Object.keys(nextErrors).length === 0
   }
 
-  const submit = (event) => {
+  const submit = async (event) => {
     event.preventDefault()
-    if (!validate()) return
+    if (!validate() || isSaving) return
 
-    addAppointment({
-      id: form.id,
-      patientNo: form.patientNo,
-      patient: form.patient,
-      date: formatDisplayDate(form.dateIso),
-      dateIso: form.dateIso,
-      time: form.time,
-      type: form.type,
-      department: form.type,
-      status: form.status,
-      duration: Number(form.duration),
-      priority: form.priority,
-      reason: form.reason.trim(),
-      complaint: form.complaint.trim(),
-      phone: form.phone,
-      email: form.email,
-      doctor: DOCTOR_NAME,
-      reminderMethod: form.reminderMethod,
-      reminderTime: form.reminderTime,
-      note: [form.note.trim(), form.doctorNote.trim()].filter(Boolean).join('\n'),
-      previousVisitId: form.previousVisitId,
-      isControl: form.isControl,
-    })
+    try {
+      setIsSaving(true)
+      const payload = {
+        patientNo: form.patientNo,
+        dateIso: form.dateIso,
+        time: form.time,
+        type: form.type,
+        status: form.status,
+        duration: Number(form.duration),
+        priority: form.priority,
+        reason: form.reason.trim(),
+        complaint: form.complaint.trim(),
+        doctorId: form.doctorId || doctors[0]?.id || null,
+        reminderMethod: form.reminderMethod,
+        reminderTime: form.reminderTime,
+        note: form.note.trim(),
+        doctorNote: form.doctorNote.trim(),
+        previousVisitId: form.previousVisitId,
+        isControl: form.isControl,
+      }
 
-    navigate('/randevular', { state: { notification: 'Randevu başarıyla oluşturuldu.' } })
+      if (editId) {
+        await appointmentsApi.update(editId, payload)
+        navigate('/randevular', { state: { notification: 'Randevu güncellendi.' } })
+        return
+      }
+
+      await appointmentsApi.create(payload)
+      navigate('/randevular', { state: { notification: 'Randevu başarıyla oluşturuldu.' } })
+    } catch (requestError) {
+      setNotification({ message: requestError.message, tone: 'error' })
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const leavePage = () => navigate('/randevular')
@@ -266,9 +281,9 @@ export default function AddAppointment() {
           <X size={17} />
           İptal
         </button>
-        <button className={primaryButtonClass} form="add-appointment-form" type="submit">
+        <button className={primaryButtonClass} disabled={isSaving} form="add-appointment-form" type="submit">
           <Save size={17} />
-          Randevuyu Kaydet
+          {isSaving ? 'Kaydediliyor...' : 'Randevuyu Kaydet'}
         </button>
       </div>
       <form className="space-y-5" id="add-appointment-form" onSubmit={submit}>
@@ -293,7 +308,10 @@ export default function AddAppointment() {
             </label>
             <label className={formLabelClass} htmlFor="appointment-doctor">
               Doktor
-              <input className={`${formInputClass} bg-gray-50`} id="appointment-doctor" readOnly value={DOCTOR_NAME} />
+              <select className={formInputClass} id="appointment-doctor" value={form.doctorId || doctors[0]?.id || ''} onChange={(event) => update('doctorId', event.target.value)}>
+                {doctors.length === 0 && <option value="">Doktor yükleniyor</option>}
+                {doctors.map((doctor) => <option key={doctor.id} value={doctor.id}>{doctor.name}</option>)}
+              </select>
             </label>
             <label className={formLabelClass} htmlFor="appointment-phone">
               Telefon
@@ -420,9 +438,9 @@ export default function AddAppointment() {
               <X size={17} />
               İptal
             </button>
-            <button className={primaryButtonClass} type="submit">
+            <button className={primaryButtonClass} disabled={isSaving} type="submit">
               <CalendarPlus size={17} />
-              Randevuyu Kaydet
+              {isSaving ? 'Kaydediliyor...' : 'Randevuyu Kaydet'}
             </button>
           </div>
         </Section>

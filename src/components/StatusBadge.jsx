@@ -14,6 +14,7 @@ const toneMap = {
   Uyarı: 'bg-orange-100 text-orange-700',
   Arşivlendi: 'bg-gray-100 text-gray-600',
   'İşten Ayrıldı': 'bg-gray-200 text-gray-700',
+  İptal: 'bg-red-100 text-red-700',
   'İptal Edildi': 'bg-red-100 text-red-700',
   'Süresi Doldu': 'bg-red-100 text-red-700',
   Hata: 'bg-red-100 text-red-700',

@@ -44,7 +44,7 @@ export default function Sidebar({ open, onClose }) {
             </NavLink>
           ))}
         </nav>
-        <button className="mt-auto flex w-full items-center gap-3 border-0 border-t border-white/[0.08] bg-transparent px-3 py-[11px] text-[13px] text-red-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#111827]" type="button"><LogOut size={19} />Çıkış Yap</button>
+        <button className="mt-auto flex w-full cursor-not-allowed items-center gap-3 border-0 border-t border-white/[0.08] bg-transparent px-3 py-[11px] text-[13px] text-red-300/60" disabled title="Kimlik doğrulama sistemi henüz bağlanmadı." type="button"><LogOut size={19} />Çıkış Yap</button>
       </aside>
       {open && <button className="fixed inset-0 z-[25] block border-0 bg-gray-900/[0.48]" aria-label="Menüyü kapat" type="button" onClick={onClose} />}
     </>

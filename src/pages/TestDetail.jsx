@@ -14,29 +14,41 @@ import TestStatusPanel from '../components/test-detail/TestStatusPanel'
 import TestSummaryCard from '../components/test-detail/TestSummaryCard'
 import TestTabs from '../components/test-detail/TestTabs'
 import { isLaboratoryTest } from '../components/test-detail/testUtils'
-import { testDetails } from '../data/testDetailsMock'
-import { formInputClass } from '../styles/uiClasses'
+import { testsApi } from '../services/api'
+import { formInputClass, paddedCardClass } from '../styles/uiClasses'
 
 const cancelReasons = ['Yanlış hasta', 'Yanlış tetkik', 'Numune sorunu', 'Çift kayıt', 'Teknik hata', 'Diğer']
 
 export default function TestDetail() {
   const { id } = useParams()
-  const test = testDetails.find((item) => item.id === id)
-  const [testState, setTestState] = useState(test)
+  const [testState, setTestState] = useState(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState('')
   const [activeTab, setActiveTab] = useState('overview')
   const [cancelModalOpen, setCancelModalOpen] = useState(false)
   const [reason, setReason] = useState('')
   const [note, setNote] = useState('')
 
-  useEffect(() => {
-    setTestState(test)
-    setActiveTab('overview')
-    setCancelModalOpen(false)
-    setReason('')
-    setNote('')
-  }, [test])
+  const load = async () => {
+    try {
+      setIsLoading(true)
+      setError('')
+      setTestState(await testsApi.detail(id))
+    } catch (requestError) {
+      setError(requestError.message)
+      setTestState(null)
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
-  if (!test || !testState) return <EmptyState />
+  useEffect(() => {
+    load()
+    setActiveTab('overview')
+  }, [id])
+
+  if (isLoading) return <section className={`${paddedCardClass} py-16 text-center text-sm text-gray-500`}>Tetkik yükleniyor...</section>
+  if (error || !testState) return <EmptyState />
 
   const closeCancelModal = () => {
     setCancelModalOpen(false)
@@ -44,17 +56,9 @@ export default function TestDetail() {
     setNote('')
   }
 
-  const updateTestStatus = () => {
-    const actionReason = reason === 'Diğer' ? note.trim() : reason
-    setTestState((current) => ({
-      ...current,
-      status: 'İptal Edildi',
-      actionReason,
-      history: [
-        { id: `HIS-CANCEL-${current.id}`, date: '05 Haziran 2026', time: '12:00', action: 'Tetkik durumu güncellendi', description: actionReason, actor: 'Dr. Cumhur Kesemenli' },
-        ...current.history,
-      ],
-    }))
+  const updateTestStatus = async () => {
+    const updated = await testsApi.update(testState.id, { status: 'İptal Edildi', reason, note })
+    setTestState(updated)
     setActiveTab('overview')
     closeCancelModal()
   }
@@ -97,7 +101,6 @@ export default function TestDetail() {
           <label className="text-xs font-semibold text-gray-600">Açıklama
             <textarea className={`${formInputClass} mt-1.5 min-h-20 resize-y`} value={note} onChange={(event) => setNote(event.target.value)} placeholder="İsteğe bağlı açıklama" />
           </label>
-          {isReasonInvalid && <p className="text-xs font-semibold text-red-600">{reason === 'Diğer' ? 'Diğer nedeni için açıklama zorunludur.' : 'Neden seçimi zorunludur.'}</p>}
         </div>
       </ConfirmActionModal>
     </>

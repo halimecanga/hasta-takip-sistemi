@@ -1,23 +1,29 @@
+import { useEffect, useState } from 'react'
 import { ArrowLeft, UserPlus } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import AddStaffForm from '../components/staff-add/AddStaffForm'
 import PageTitle from '../components/PageTitle'
-import { useStaff } from '../context/StaffContext'
+import { staffApi } from '../services/api'
 import { outlineButtonClass } from '../styles/uiClasses'
 
 export default function AddStaff() {
   const navigate = useNavigate()
-  const { addStaff, hasDoctor } = useStaff()
+  const [hasDoctor, setHasDoctor] = useState(false)
 
-  const saveStaff = (form) => {
-    const result = addStaff(form)
-    if (result.ok) {
+  useEffect(() => {
+    staffApi.doctors().then((doctors) => setHasDoctor(doctors.length > 0)).catch(() => {})
+  }, [])
+
+  const saveStaff = async (form) => {
+    try {
+      const result = await staffApi.create(form)
       navigate('/personeller', {
         state: { message: `${result.staff.name} personel listesine eklendi.` },
       })
+      return { ok: true, staff: result.staff }
+    } catch (error) {
+      return { ok: false, message: error.message }
     }
-
-    return result
   }
 
   return (

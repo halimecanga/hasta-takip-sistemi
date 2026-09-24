@@ -1,0 +1,7 @@
+.env
+.env.*
+!.env.example
+backups/*.sql
+uploads/*
+!uploads/.gitkeep
+node_modules/

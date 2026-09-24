@@ -1,7 +1,8 @@
+import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ArrowLeft, Clock3, FileText, MonitorSmartphone, UserRound } from 'lucide-react'
 import PageTitle from '../components/PageTitle'
-import { activityLogs } from '../data/activityLogsMock'
+import { logsApi } from '../services/api'
 import { outlineButtonClass, paddedCardClass, primaryButtonClass } from '../styles/uiClasses'
 
 const statusClasses = {
@@ -50,8 +51,17 @@ function EmptyState() {
 
 export default function ActivityLogDetail() {
   const { id } = useParams()
-  const log = activityLogs.find((item) => item.id === id)
+  const [log, setLog] = useState(null)
+  const [isLoading, setIsLoading] = useState(true)
 
+  useEffect(() => {
+    logsApi.detail(id)
+      .then(setLog)
+      .catch(() => setLog(null))
+      .finally(() => setIsLoading(false))
+  }, [id])
+
+  if (isLoading) return <section className={`${paddedCardClass} py-16 text-center text-sm text-gray-500`}>İşlem kaydı yükleniyor...</section>
   if (!log) return <EmptyState />
 
   const hasStaffProfile = Boolean(log.staffId)

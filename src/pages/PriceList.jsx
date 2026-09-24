@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Archive, Eye, Pencil, Plus, RotateCcw, Trash2, XCircle } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import ConfirmActionModal from '../components/ConfirmActionModal'
@@ -8,39 +8,66 @@ import PageTitle from '../components/PageTitle'
 import RowActionsMenu from '../components/RowActionsMenu'
 import { formatCurrency } from '../components/price-detail/priceUtils'
 import StatusBadge from '../components/StatusBadge'
-import { priceList } from '../data/mockData'
+import { pricesApi } from '../services/api'
 import { formInputClass, paddedCardClass, primaryButtonClass, textButtonClass } from '../styles/uiClasses'
 
 export default function PriceList() {
-  const [items, setItems] = useState(() => priceList.map((item) => ({ ...item })))
+  const [items, setItems] = useState([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
   const [pendingAction, setPendingAction] = useState(null)
   const [notification, setNotification] = useState(null)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [form, setForm] = useState({ name: '', category: 'Muayene', price: '', description: '' })
 
-  const filteredItems = useMemo(() => {
-    const normalizedSearch = search.trim().toLocaleLowerCase('tr-TR')
-    return items.filter((item) => {
-      const matchesSearch = !normalizedSearch || [item.name, item.category, item.description, item.id]
-        .some((value) => value.toLocaleLowerCase('tr-TR').includes(normalizedSearch))
-      return matchesSearch && (!status || item.status === status)
-    })
-  }, [items, search, status])
-
-  const closeModal = () => setPendingAction(null)
-
-  const runAction = () => {
-    if (pendingAction.type === 'delete') {
-      setItems((current) => current.filter((item) => item.id !== pendingAction.item.id))
-    } else {
-      setItems((current) => current.map((item) => (
-        item.id === pendingAction.item.id
-          ? { ...item, status: pendingAction.nextStatus }
-          : item
-      )))
+  const load = async () => {
+    try {
+      setIsLoading(true)
+      setError('')
+      setItems(await pricesApi.list({ search, status }))
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setIsLoading(false)
     }
-    setNotification({ message: pendingAction.message, tone: pendingAction.tone })
-    closeModal()
+  }
+
+  useEffect(() => {
+    load()
+  }, [search, status])
+
+  const runAction = async () => {
+    try {
+      if (pendingAction.type === 'delete') {
+        await pricesApi.remove(pendingAction.item.id)
+      } else {
+        await pricesApi.status(pendingAction.item.id, pendingAction.nextStatus)
+      }
+      setNotification({ message: pendingAction.message, tone: pendingAction.tone })
+      setPendingAction(null)
+      await load()
+    } catch (requestError) {
+      setNotification({ message: requestError.message, tone: 'error' })
+    }
+  }
+
+  const createPrice = async (event) => {
+    event.preventDefault()
+    try {
+      setIsSaving(true)
+      await pricesApi.create(form)
+      setNotification({ message: 'Fiyat kaydı oluşturuldu.', tone: 'success' })
+      setCreateOpen(false)
+      setForm({ name: '', category: 'Muayene', price: '', description: '' })
+      await load()
+    } catch (requestError) {
+      setNotification({ message: requestError.message, tone: 'error' })
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const openAction = (item, action) => setPendingAction({ item, ...action })
@@ -79,8 +106,19 @@ export default function PriceList() {
 
   return (
     <>
-      <PageTitle title="Fiyat Listesi" subtitle="Klinik hizmetlerinin güncel ücret tarifesi." action={<button className={primaryButtonClass} type="button"><Plus size={18} />Yeni İşlem</button>} />
+      <PageTitle title="Fiyat Listesi" subtitle="Klinik hizmetlerinin güncel ücret tarifesi." action={<button className={primaryButtonClass} type="button" onClick={() => setCreateOpen((current) => !current)}><Plus size={18} />Yeni İşlem</button>} />
       <InlineNotification message={notification?.message} tone={notification?.tone} onClose={() => setNotification(null)} />
+      {createOpen && (
+        <form className={`${paddedCardClass} mb-5 grid grid-cols-2 gap-3 max-[640px]:grid-cols-1`} onSubmit={createPrice}>
+          <input className={formInputClass} placeholder="İşlem adı" required value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} />
+          <select className={formInputClass} value={form.category} onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}>
+            {['Muayene', 'Laboratuvar', 'Görüntüleme', 'Uygulama', 'Kontrol', 'Diğer'].map((option) => <option key={option}>{option}</option>)}
+          </select>
+          <input className={formInputClass} min="0" placeholder="Ücret" required type="number" value={form.price} onChange={(event) => setForm((current) => ({ ...current, price: event.target.value }))} />
+          <input className={formInputClass} placeholder="Açıklama" required value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} />
+          <button className={primaryButtonClass} disabled={isSaving} type="submit">{isSaving ? 'Kaydediliyor...' : 'Kaydet'}</button>
+        </form>
+      )}
       <div className={paddedCardClass}>
         <div className="mb-[18px] grid grid-cols-[minmax(220px,1fr)_170px] gap-3 max-[640px]:grid-cols-1">
           <input aria-label="İşlem veya kategori ara" className={formInputClass} placeholder="İşlem veya kategori ara..." type="search" value={search} onChange={(event) => setSearch(event.target.value)} />
@@ -89,7 +127,7 @@ export default function PriceList() {
             {['Aktif', 'Pasif', 'Arşivlendi'].map((option) => <option key={option}>{option}</option>)}
           </select>
         </div>
-        <DataTable columns={columns} data={filteredItems} />
+        {isLoading ? <p className="py-8 text-center text-sm text-gray-500">Fiyat listesi yükleniyor...</p> : error ? <p className="py-8 text-center text-sm text-red-600">{error}</p> : <DataTable columns={columns} data={items} />}
       </div>
       <ConfirmActionModal
         confirmLabel={pendingAction?.confirmLabel}
@@ -97,7 +135,7 @@ export default function PriceList() {
         isOpen={Boolean(pendingAction)}
         title={pendingAction?.title}
         variant={pendingAction?.variant}
-        onCancel={closeModal}
+        onCancel={() => setPendingAction(null)}
         onConfirm={runAction}
       />
     </>

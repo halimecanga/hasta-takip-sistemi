@@ -2,7 +2,7 @@ import { Plus, Save, Trash2, X } from 'lucide-react'
 import { useState } from 'react'
 import { formInputClass, formLabelClass, outlineButtonClass, paddedCardClass, primaryButtonClass, textareaClass } from '../../styles/uiClasses'
 
-const statusOptions = ['Aktif', 'Tamamlandı', 'Süresi Doldu', 'İptal Edildi']
+const statusOptions = ['Aktif', 'Tamamlandı', 'Süresi Doldu', 'İptal']
 
 const emptyMedicine = (index = 0) => ({
   id: `MED-${Date.now()}-${index}`,

@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import ConfirmActionModal from '../components/ConfirmActionModal'
 import EmptyState from '../components/prescription-detail/EmptyState'
 import InstructionsTab from '../components/prescription-detail/InstructionsTab'
-import MedicationSchedule from '../components/prescription-detail/MedicationSchedule'
 import MedicineList from '../components/prescription-detail/MedicineList'
 import PrescriptionAlerts from '../components/prescription-detail/PrescriptionAlerts'
 import PrescriptionDocuments from '../components/prescription-detail/PrescriptionDocuments'
@@ -14,105 +13,114 @@ import PrescriptionOverview from '../components/prescription-detail/Prescription
 import PrescriptionQuickStats from '../components/prescription-detail/PrescriptionQuickStats'
 import PrescriptionSummary from '../components/prescription-detail/PrescriptionSummary'
 import PrescriptionTabs from '../components/prescription-detail/PrescriptionTabs'
-import { prescriptionDetails } from '../data/prescriptionDetailsMock'
-import { formInputClass } from '../styles/uiClasses'
+import { prescriptionsApi } from '../services/api'
+import { formInputClass, paddedCardClass } from '../styles/uiClasses'
 
 const cancelReasons = ['Yanlış ilaç seçimi', 'Doz değişikliği', 'Hasta intoleransı', 'Çift reçete', 'Diğer']
 
 export default function PrescriptionDetail() {
   const { id } = useParams()
-  const prescriptionRecord = prescriptionDetails.find((prescription) => prescription.id === id)
-  const [prescriptionState, setPrescriptionState] = useState(prescriptionRecord)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [prescription, setPrescription] = useState(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState('')
   const [activeTab, setActiveTab] = useState('overview')
-  const [editMode, setEditMode] = useState(false)
-  const [cancelModalOpen, setCancelModalOpen] = useState(false)
-  const [cancelReason, setCancelReason] = useState('')
-  const [cancelNote, setCancelNote] = useState('')
+  const [cancelOpen, setCancelOpen] = useState(false)
+  const [reason, setReason] = useState('')
+  const [note, setNote] = useState('')
+  const editMode = searchParams.get('duzenle') === 'true'
+
+  const load = async () => {
+    try {
+      setIsLoading(true)
+      setError('')
+      setPrescription(await prescriptionsApi.detail(id))
+    } catch (requestError) {
+      setError(requestError.message)
+      setPrescription(null)
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   useEffect(() => {
-    setPrescriptionState(prescriptionRecord)
-    setActiveTab('overview')
-    setEditMode(false)
-    setCancelModalOpen(false)
-    setCancelReason('')
-    setCancelNote('')
-  }, [prescriptionRecord])
+    load()
+  }, [id])
 
-  if (!prescriptionRecord || !prescriptionState) return <EmptyState />
-
-  const savePrescription = (nextPrescription) => {
-    setPrescriptionState(nextPrescription)
-    setEditMode(false)
-    setActiveTab('overview')
+  if (isLoading) {
+    return <section className={`${paddedCardClass} py-16 text-center text-sm text-gray-500`}>Reçete yükleniyor...</section>
   }
 
-  const closeCancelModal = () => {
-    setCancelModalOpen(false)
-    setCancelReason('')
-    setCancelNote('')
+  if (error || !prescription) {
+    return <EmptyState />
   }
 
-  const cancelPrescription = () => {
-    const cancellationReason = cancelReason === 'Diğer' ? cancelNote.trim() : cancelReason
-    setPrescriptionState((current) => ({
-      ...current,
-      status: 'İptal Edildi',
-      cancellationReason,
-      history: [
-        { id: `HIS-CANCEL-${current.id}`, date: '05 Haziran 2026', time: '12:00', action: 'Reçete iptal edildi', description: cancellationReason, actor: 'Dr. Cumhur Kesemenli' },
-        ...current.history,
-      ],
-    }))
-    setActiveTab('overview')
-    closeCancelModal()
+  const savePrescription = async (nextPrescription) => {
+    const saved = await prescriptionsApi.update(id, nextPrescription)
+    setPrescription(saved)
+    setSearchParams({})
   }
 
-  const isCancelInvalid = !cancelReason || (cancelReason === 'Diğer' && !cancelNote.trim())
+  const cancelPrescription = async () => {
+    const updated = await prescriptionsApi.status(id, { status: 'İptal', reason, note })
+    setPrescription((current) => ({ ...current, ...updated, status: 'İptal', cancellationReason: reason === 'Diğer' ? note : reason }))
+    setCancelOpen(false)
+    await load()
+  }
 
-  const renderTabContent = () => {
-    if (activeTab === 'instructions') return <InstructionsTab prescription={prescriptionState} />
-    if (activeTab === 'history') return <PrescriptionHistory history={prescriptionState.history} />
-    if (activeTab === 'documents') return <PrescriptionDocuments documents={prescriptionState.documents} />
-    return <PrescriptionOverview prescription={prescriptionState} />
+  const isReasonInvalid = !reason || (reason === 'Diğer' && !note.trim())
+
+  const renderTab = () => {
+    if (activeTab === 'instructions') return <InstructionsTab prescription={prescription} />
+    if (activeTab === 'history') return <PrescriptionHistory history={prescription.history} />
+    if (activeTab === 'documents') return <PrescriptionDocuments documents={prescription.documents} />
+    return <PrescriptionOverview prescription={prescription} />
   }
 
   return (
     <>
-      <PrescriptionHeader prescription={prescriptionState} editMode={editMode} onCancelPrescription={() => setCancelModalOpen(true)} onEdit={() => setEditMode(true)} />
-      <PrescriptionSummary prescription={prescriptionState} />
-      <PrescriptionQuickStats prescription={prescriptionState} />
-      <PrescriptionAlerts alerts={prescriptionState.alerts} />
+      <PrescriptionHeader
+        prescription={prescription}
+        editMode={editMode}
+        onEdit={() => setSearchParams({ duzenle: 'true' })}
+        onCancelPrescription={() => setCancelOpen(true)}
+      />
       {editMode ? (
-        <PrescriptionEditForm prescription={prescriptionState} onCancel={() => setEditMode(false)} onSave={savePrescription} />
+        <PrescriptionEditForm
+          prescription={prescription}
+          onCancel={() => setSearchParams({})}
+          onSave={savePrescription}
+        />
       ) : (
         <>
-          <MedicineList medicines={prescriptionState.medicines} />
-          <MedicationSchedule medicines={prescriptionState.medicines} />
+          <PrescriptionAlerts alerts={prescription.alerts || []} />
+          <PrescriptionSummary prescription={prescription} />
+          <PrescriptionQuickStats prescription={prescription} />
+          <MedicineList medicines={prescription.medicines} />
           <PrescriptionTabs activeTab={activeTab} onChange={setActiveTab} />
-          {renderTabContent()}
+          {renderTab()}
         </>
       )}
       <ConfirmActionModal
         confirmLabel="Onayla"
-        description="Reçete durumu iptal edildi olarak güncellenecek ve iptal nedeni detayda görünecektir."
-        isConfirmDisabled={isCancelInvalid}
-        isOpen={cancelModalOpen}
+        description="Reçete durumu iptal edildi olarak güncellenecek."
+        isConfirmDisabled={isReasonInvalid}
+        isOpen={cancelOpen}
         title="Reçete iptal edilsin mi?"
         variant="warning"
-        onCancel={closeCancelModal}
+        onCancel={() => setCancelOpen(false)}
         onConfirm={cancelPrescription}
       >
         <div className="grid gap-3">
           <label className="text-xs font-semibold text-gray-600">İptal nedeni
-            <select className={`${formInputClass} mt-1.5`} value={cancelReason} onChange={(event) => setCancelReason(event.target.value)}>
+            <select className={`${formInputClass} mt-1.5`} value={reason} onChange={(event) => setReason(event.target.value)}>
               <option value="">Neden seçin</option>
-              {cancelReasons.map((reason) => <option key={reason}>{reason}</option>)}
+              {cancelReasons.map((option) => <option key={option}>{option}</option>)}
             </select>
           </label>
           <label className="text-xs font-semibold text-gray-600">Açıklama
-            <textarea className={`${formInputClass} mt-1.5 min-h-20 resize-y`} value={cancelNote} onChange={(event) => setCancelNote(event.target.value)} placeholder="İsteğe bağlı açıklama" />
+            <textarea className={`${formInputClass} mt-1.5 min-h-20 resize-y`} value={note} onChange={(event) => setNote(event.target.value)} />
           </label>
-          {isCancelInvalid && <p className="text-xs font-semibold text-red-600">{cancelReason === 'Diğer' ? 'Diğer nedeni için açıklama zorunludur.' : 'İptal nedeni zorunludur.'}</p>}
         </div>
       </ConfirmActionModal>
     </>

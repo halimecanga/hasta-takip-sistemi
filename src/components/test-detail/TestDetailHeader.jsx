@@ -24,8 +24,8 @@ export default function TestDetailHeader({ test, onCancelTest }) {
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-end gap-2 max-[760px]:w-full max-[760px]:justify-start">
-        <button className={outlineButtonClass} type="button"><Printer size={17} />Yazdır</button>
-        <button className={outlineButtonClass} type="button"><Download size={17} />PDF İndir</button>
+        <button className={outlineButtonClass} type="button" onClick={() => window.print()}><Printer size={17} />Yazdır</button>
+        <button className={`${outlineButtonClass} opacity-60`} disabled title="PDF indirme henüz uygulanmadı." type="button"><Download size={17} />PDF yok</button>
         <Link className={outlineButtonClass} state={{ from: '/tetkikler', fromLabel: 'Tetkikler' }} to={`/hastalar/${test.patientNo}?dosya=${test.visitId}`}><UserRound size={17} />Hasta Detayına Git</Link>
         {canCancel && (
           <RowActionsMenu

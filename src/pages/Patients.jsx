@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Archive, RotateCcw, Pencil, UserPlus } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import ConfirmActionModal from '../components/ConfirmActionModal'
@@ -7,7 +7,7 @@ import InlineNotification from '../components/InlineNotification'
 import PageTitle from '../components/PageTitle'
 import RowActionsMenu from '../components/RowActionsMenu'
 import StatusBadge from '../components/StatusBadge'
-import { patients } from '../data/mockData'
+import { patientsApi } from '../services/api'
 import { formInputClass, mutedTextButtonClass, paddedCardClass, primaryButtonClass, textButtonClass } from '../styles/uiClasses'
 
 const archiveFilters = {
@@ -17,12 +17,31 @@ const archiveFilters = {
 }
 
 export default function Patients() {
-  const [patientItems, setPatientItems] = useState(() => patients.map((item) => ({ ...item })))
+  const [patientItems, setPatientItems] = useState([])
+const [isLoading, setIsLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [archiveFilter, setArchiveFilter] = useState('active')
   const [selectedPatient, setSelectedPatient] = useState(null)
   const [notification, setNotification] = useState(null)
-
+  useEffect(() => {
+    const loadPatients = async () => {
+      try {
+        const data = await patientsApi.list()
+        setPatientItems(data)
+      } catch (error) {
+        console.error(error)
+  
+        setNotification({
+          message: 'Hastalar veritabanından alınamadı.',
+          tone: 'error',
+        })
+      } finally {
+        setIsLoading(false)
+      }
+    }
+  
+    loadPatients()
+  }, [])
   const filteredPatients = useMemo(() => {
     const normalizedSearch = search.trim().toLocaleLowerCase('tr-TR')
 
@@ -41,25 +60,65 @@ export default function Patients() {
 
   const closeModal = () => setSelectedPatient(null)
 
-  const archivePatient = () => {
-    setPatientItems((current) => current.map((patient) => (
-      patient.no === selectedPatient.no
-        ? { ...patient, previousStatus: patient.status, status: 'Arşivlendi' }
-        : patient
-    )))
-    setNotification({ message: 'Hasta arşivlendi.', tone: 'warning' })
-    closeModal()
+  const archivePatient = async () => {
+    if (!selectedPatient) return
+  
+    try {
+      const data = await patientsApi.archive(selectedPatient.no)
+  
+      setPatientItems((current) =>
+        current.map((patient) =>
+          patient.no === selectedPatient.no
+            ? {
+                ...patient,
+                status: data.patient.status,
+                previousStatus: data.patient.previousStatus,
+              }
+            : patient
+        )
+      )
+  
+      setNotification({
+        message: data.message,
+        tone: 'warning',
+      })
+  
+      closeModal()
+    } catch (error) {
+      setNotification({
+        message: error.message,
+        tone: 'error',
+      })
+    }
   }
-
-  const restorePatient = (patientNo) => {
-    setPatientItems((current) => current.map((patient) => (
-      patient.no === patientNo
-        ? { ...patient, status: patient.previousStatus && patient.previousStatus !== 'Arşivlendi' ? patient.previousStatus : 'Aktif' }
-        : patient
-    )))
-    setNotification({ message: 'Hasta arşivden çıkarıldı.', tone: 'success' })
+  
+  const restorePatient = async (patientNo) => {
+    try {
+      const data = await patientsApi.restore(patientNo)
+  
+      setPatientItems((current) =>
+        current.map((patient) =>
+          patient.no === patientNo
+            ? {
+                ...patient,
+                status: data.patient.status,
+                previousStatus: null,
+              }
+            : patient
+        )
+      )
+  
+      setNotification({
+        message: data.message,
+        tone: 'success',
+      })
+    } catch (error) {
+      setNotification({
+        message: error.message,
+        tone: 'error',
+      })
+    }
   }
-
   const columns = [
     { key: 'no', label: 'Hasta No' },
     { key: 'name', label: 'Ad Soyad' },
@@ -75,7 +134,7 @@ export default function Patients() {
       render: (row) => (
         <div className="flex items-center gap-0.5">
           <Link className={textButtonClass} state={{ from: '/hastalar', fromLabel: 'Hastalar' }} to={`/hastalar/${row.no}`}>Görüntüle</Link>
-          {row.status !== 'Arşivlendi' && <button className={mutedTextButtonClass} type="button"><Pencil size={15} />Düzenle</button>}
+          {row.status !== 'Arşivlendi' && <button className={`${mutedTextButtonClass} opacity-60`} disabled title="Hasta düzenleme henüz uygulanmadı." type="button"><Pencil size={15} />Düzenle</button>}
           <RowActionsMenu
             label={`${row.name} hasta işlemleri`}
             items={row.status === 'Arşivlendi'
@@ -88,8 +147,12 @@ export default function Patients() {
   ]
 
   return (
+    
     <>
-      <PageTitle title="Hastalar" subtitle="Kayıtlı hastaları görüntüleyin ve yönetin." action={<button className={primaryButtonClass} type="button"><UserPlus size={18} />Yeni Hasta Ekle</button>} />
+<Link className={primaryButtonClass} to="/hastalar/yeni">
+  <UserPlus size={18} />
+  Yeni Hasta Ekle
+</Link>
       <InlineNotification message={notification?.message} tone={notification?.tone} onClose={() => setNotification(null)} />
       <div className={paddedCardClass}>
         <div className="mb-[18px] grid grid-cols-[minmax(220px,1fr)_190px] gap-3 max-[640px]:grid-cols-1">
@@ -98,7 +161,13 @@ export default function Patients() {
             {Object.entries(archiveFilters).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
         </div>
-        <DataTable columns={columns} data={filteredPatients} />
+        {isLoading ? (
+  <p className="py-8 text-center text-sm text-slate-500">
+    Hastalar yükleniyor...
+  </p>
+) : (
+  <DataTable columns={columns} data={filteredPatients} />
+)}
       </div>
       <ConfirmActionModal
         confirmLabel="Hastayı Arşivle"

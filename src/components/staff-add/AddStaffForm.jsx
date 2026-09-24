@@ -76,13 +76,13 @@ export default function AddStaffForm({ hasDoctor, onSubmit }) {
     return Object.keys(nextErrors).length === 0
   }
 
-  const submit = (event) => {
+  const submit = async (event) => {
     event.preventDefault()
     if (!validate()) return
 
-    const result = onSubmit(form)
-    if (!result.ok) {
-      setSubmitError(result.message)
+    const result = await onSubmit(form)
+    if (!result?.ok) {
+      setSubmitError(result?.message || 'Personel kaydedilemedi.')
       document.getElementById('add-staff-roleType')?.focus()
     }
   }
@@ -99,7 +99,7 @@ export default function AddStaffForm({ hasDoctor, onSubmit }) {
     <form className={`${paddedCardClass} space-y-5`} onSubmit={submit}>
       <div>
         <h2 className="text-lg font-bold text-gray-900">Personel Bilgileri</h2>
-        <p className="mt-1 text-xs text-gray-500">Yeni personel kaydı yalnızca bu oturumdaki frontend state içinde tutulur.</p>
+        <p className="mt-1 text-xs text-gray-500">Yeni personel kaydı veritabanına kalıcı olarak yazılır.</p>
       </div>
       {submitError && (
         <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">

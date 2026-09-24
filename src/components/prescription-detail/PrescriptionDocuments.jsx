@@ -1,4 +1,5 @@
 import { Download, Eye, FileText } from 'lucide-react'
+import { documentDownloadUrl, documentViewUrl } from '../../services/api'
 import { paddedCardClass, textButtonClass } from '../../styles/uiClasses'
 
 export default function PrescriptionDocuments({ documents }) {
@@ -31,8 +32,8 @@ export default function PrescriptionDocuments({ documents }) {
                   <td className="px-3 py-3 text-gray-600">{document.date}</td>
                   <td className="px-3 py-3">
                     <div className="flex justify-end gap-1">
-                      <button aria-label={`${document.name} görüntüle`} className={`${textButtonClass} h-8 w-8 p-0`} title="Görüntüle" type="button"><Eye size={15} /></button>
-                      <button aria-label={`${document.name} indir`} className={`${textButtonClass} h-8 w-8 p-0`} title="İndir" type="button"><Download size={15} /></button>
+                      <a aria-label={`${document.name} görüntüle`} className={`${textButtonClass} h-8 w-8 p-0`} href={document.url || documentViewUrl(document.id)} rel="noreferrer" target="_blank" title="Görüntüle"><Eye size={15} /></a>
+                      <a aria-label={`${document.name} indir`} className={`${textButtonClass} h-8 w-8 p-0`} href={document.downloadUrl || documentDownloadUrl(document.id)} title="İndir"><Download size={15} /></a>
                     </div>
                   </td>
                 </tr>

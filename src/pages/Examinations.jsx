@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Eye, FileEdit, RotateCcw, Trash2, XCircle } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import ConfirmActionModal from '../components/ConfirmActionModal'
@@ -7,39 +7,41 @@ import InlineNotification from '../components/InlineNotification'
 import PageTitle from '../components/PageTitle'
 import RowActionsMenu from '../components/RowActionsMenu'
 import StatusBadge from '../components/StatusBadge'
-import { examinations } from '../data/mockData'
+import { examinationsApi } from '../services/api'
 import { formInputClass, paddedCardClass, textButtonClass } from '../styles/uiClasses'
 
 const cancelReasons = ['Yanlış kayıt', 'Hasta gelmedi', 'Çift kayıt', 'Diğer']
 
-const draftExamination = {
-  id: 'EXM-2026-DRAFT',
-  patientNo: 'HT-1042',
-  visitId: 'DOS-DRAFT-001',
-  patient: 'Ayşe Yılmaz',
-  date: '05 Haz 2026',
-  complaint: 'Taslak muayene notu',
-  diagnosis: 'Ön değerlendirme bekliyor',
-  status: 'Taslak',
-}
-
 export default function Examinations() {
-  const [items, setItems] = useState(() => [...examinations.map((item) => ({ ...item })), draftExamination])
+  const [items, setItems] = useState([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
+  const [doctor, setDoctor] = useState('')
+  const [type, setType] = useState('')
+  const [date, setDate] = useState('')
   const [pendingAction, setPendingAction] = useState(null)
   const [reason, setReason] = useState('')
   const [note, setNote] = useState('')
   const [notification, setNotification] = useState(null)
+  const [busy, setBusy] = useState(false)
 
-  const filteredItems = useMemo(() => {
-    const normalizedSearch = search.trim().toLocaleLowerCase('tr-TR')
-    return items.filter((item) => {
-      const matchesSearch = !normalizedSearch || [item.patient, item.complaint, item.diagnosis, item.id]
-        .some((value) => value.toLocaleLowerCase('tr-TR').includes(normalizedSearch))
-      return matchesSearch && (!status || item.status === status)
-    })
-  }, [items, search, status])
+  const load = async () => {
+    try {
+      setIsLoading(true)
+      setError('')
+      setItems(await examinationsApi.list({ search, status, doctor, type, date }))
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    load()
+  }, [search, status, doctor, type, date])
 
   const closeModal = () => {
     setPendingAction(null)
@@ -47,28 +49,46 @@ export default function Examinations() {
     setNote('')
   }
 
-  const showNoop = () => setNotification({ message: 'Bu işlem backend/form entegrasyonu ile etkinleştirilecektir.', tone: 'warning' })
-
-  const deleteDraft = () => {
-    setItems((current) => current.filter((item) => item.id !== pendingAction.item.id))
-    setNotification({ message: 'Taslak muayene silindi.', tone: 'success' })
-    closeModal()
+  const deleteDraft = async () => {
+    try {
+      setBusy(true)
+      await examinationsApi.remove(pendingAction.item.id)
+      setNotification({ message: 'Taslak muayene arşivlendi.', tone: 'success' })
+      closeModal()
+      await load()
+    } catch (requestError) {
+      setNotification({ message: requestError.message, tone: 'error' })
+    } finally {
+      setBusy(false)
+    }
   }
 
-  const updateStatusWithReason = () => {
-    const actionReason = reason === 'Diğer' ? note.trim() : reason
-    setItems((current) => current.map((item) => (
-      item.id === pendingAction.item.id
-        ? { ...item, status: pendingAction.nextStatus, actionReason }
-        : item
-    )))
-    setNotification({ message: pendingAction.message, tone: pendingAction.nextStatus === 'İptal Edildi' ? 'warning' : 'success' })
-    closeModal()
+  const updateStatusWithReason = async () => {
+    try {
+      setBusy(true)
+      await examinationsApi.status(pendingAction.item.id, {
+        status: pendingAction.nextStatus,
+        reason,
+        note,
+      })
+      setNotification({ message: pendingAction.message, tone: pendingAction.nextStatus === 'İptal' ? 'warning' : 'success' })
+      closeModal()
+      await load()
+    } catch (requestError) {
+      setNotification({ message: requestError.message, tone: 'error' })
+    } finally {
+      setBusy(false)
+    }
   }
 
-  const reactivate = (item) => {
-    setItems((current) => current.map((record) => (record.id === item.id ? { ...record, status: 'Bekliyor', actionReason: '' } : record)))
-    setNotification({ message: 'Muayene yeniden aktifleştirildi.', tone: 'success' })
+  const reactivate = async (item) => {
+    try {
+      await examinationsApi.status(item.id, { status: 'Bekliyor' })
+      setNotification({ message: 'Muayene yeniden aktifleştirildi.', tone: 'success' })
+      await load()
+    } catch (requestError) {
+      setNotification({ message: requestError.message, tone: 'error' })
+    }
   }
 
   const isReasonInvalid = pendingAction?.requiresReason && (!reason || (reason === 'Diğer' && !note.trim()))
@@ -83,34 +103,18 @@ export default function Examinations() {
       key: 'detail',
       label: 'Detay',
       render: (row) => {
-        const viewItem = { label: row.status === 'Bekliyor' ? 'Muayeneye Devam Et' : 'Görüntüle', icon: <Eye size={15} />, tone: 'neutral', to: `/hastalar/${row.patientNo}?dosya=${row.visitId}`, state: { from: '/muayeneler', fromLabel: 'Muayeneler' } }
+        const viewItem = { label: row.status === 'Bekliyor' || row.status === 'Taslak' ? 'Muayeneye Devam Et' : 'Görüntüle', icon: <Eye size={15} />, tone: 'neutral', to: `/hastalar/${row.patientNo}?dosya=${row.visitId}`, state: { from: '/muayeneler', fromLabel: 'Muayeneler' } }
         const itemsForStatus = {
-          Taslak: [
-            { label: 'Düzenle', icon: <FileEdit size={15} />, tone: 'neutral', onSelect: showNoop },
-            { label: 'Sil', icon: <Trash2 size={15} />, tone: 'danger', onSelect: () => setPendingAction({ type: 'delete', item: row }) },
-          ],
-          Bekliyor: [
-            viewItem,
-            { label: 'İptal Et', icon: <XCircle size={15} />, tone: 'warning', onSelect: () => setPendingAction({ type: 'cancel', item: row, nextStatus: 'İptal Edildi', message: 'Muayene iptal edildi.', requiresReason: true }) },
-          ],
-          Takipte: [
-            viewItem,
-            { label: 'Tedavi Notu Ekle', icon: <FileEdit size={15} />, tone: 'neutral', onSelect: showNoop },
-            { label: 'İptal Et', icon: <XCircle size={15} />, tone: 'warning', onSelect: () => setPendingAction({ type: 'cancel', item: row, nextStatus: 'İptal Edildi', message: 'Muayene iptal edildi.', requiresReason: true }) },
-          ],
-          Tamamlandı: [
-            viewItem,
-            { label: 'Geçersiz İşaretle', icon: <XCircle size={15} />, tone: 'warning', onSelect: () => setPendingAction({ type: 'invalid', item: row, nextStatus: 'İptal Edildi', message: 'Muayene geçersiz işaretlendi.', requiresReason: true }) },
-          ],
-          'İptal Edildi': [
-            viewItem,
-            { label: 'Yeniden Aktifleştir', icon: <RotateCcw size={15} />, tone: 'success', onSelect: () => reactivate(row) },
-          ],
+          Taslak: [viewItem, { label: 'Arşivle', icon: <Trash2 size={15} />, tone: 'danger', onSelect: () => setPendingAction({ type: 'delete', item: row }) }],
+          Bekliyor: [viewItem, { label: 'İptal Et', icon: <XCircle size={15} />, tone: 'warning', onSelect: () => setPendingAction({ type: 'cancel', item: row, nextStatus: 'İptal', message: 'Muayene iptal edildi.', requiresReason: true }) }],
+          Takipte: [viewItem, { label: 'İptal Et', icon: <XCircle size={15} />, tone: 'warning', onSelect: () => setPendingAction({ type: 'cancel', item: row, nextStatus: 'İptal', message: 'Muayene iptal edildi.', requiresReason: true }) }],
+          Tamamlandı: [viewItem, { label: 'Geçersiz İşaretle', icon: <XCircle size={15} />, tone: 'warning', onSelect: () => setPendingAction({ type: 'invalid', item: row, nextStatus: 'İptal', message: 'Muayene geçersiz işaretlendi.', requiresReason: true }) }],
+          İptal: [viewItem, { label: 'Yeniden Aktifleştir', icon: <RotateCcw size={15} />, tone: 'success', onSelect: () => reactivate(row) }],
         }
 
         return (
           <div className="flex items-center gap-1">
-            {row.status !== 'Taslak' && <Link className={textButtonClass} state={{ from: '/muayeneler', fromLabel: 'Muayeneler' }} to={`/hastalar/${row.patientNo}?dosya=${row.visitId}`}><Eye size={15} />Detay</Link>}
+            <Link className={textButtonClass} state={{ from: '/muayeneler', fromLabel: 'Muayeneler' }} to={`/hastalar/${row.patientNo}?dosya=${row.visitId}`}><Eye size={15} />Detay</Link>
             <RowActionsMenu label={`${row.patient} muayene işlemleri`} items={itemsForStatus[row.status] || [viewItem]} />
           </div>
         )
@@ -123,21 +127,30 @@ export default function Examinations() {
       <PageTitle title="Muayeneler" subtitle="Muayene kayıtları ve klinik değerlendirmeler." />
       <InlineNotification message={notification?.message} tone={notification?.tone} onClose={() => setNotification(null)} />
       <div className={paddedCardClass}>
-        <div className="mb-[18px] grid grid-cols-[minmax(220px,1fr)_180px] gap-3 max-[640px]:grid-cols-1">
+        <div className="mb-[18px] grid grid-cols-[minmax(220px,1.4fr)_160px_160px_160px_160px] gap-3 max-[1100px]:grid-cols-2 max-[640px]:grid-cols-1">
           <input aria-label="Hasta, şikayet veya tanı ara" className={formInputClass} placeholder="Hasta, şikayet veya tanı ara..." type="search" value={search} onChange={(event) => setSearch(event.target.value)} />
+          <select aria-label="Doktora göre filtrele" className={formInputClass} value={doctor} onChange={(event) => setDoctor(event.target.value)}>
+            <option value="">Tüm Doktorlar</option>
+            <option>Dr. Cumhur Kesemenli</option>
+          </select>
+          <select aria-label="Muayene türüne göre filtrele" className={formInputClass} value={type} onChange={(event) => setType(event.target.value)}>
+            <option value="">Tüm Türler</option>
+            {['Genel Muayene', 'Kontrol Muayenesi', 'İlk Değerlendirme', 'Acil Değerlendirme'].map((option) => <option key={option}>{option}</option>)}
+          </select>
           <select aria-label="Muayene durumuna göre filtrele" className={formInputClass} value={status} onChange={(event) => setStatus(event.target.value)}>
             <option value="">Tüm Durumlar</option>
-            {['Taslak', 'Bekliyor', 'Takipte', 'Tamamlandı', 'İptal Edildi'].map((option) => <option key={option}>{option}</option>)}
+            {['Taslak', 'Bekliyor', 'Takipte', 'Tamamlandı', 'İptal'].map((option) => <option key={option}>{option}</option>)}
           </select>
+          <input aria-label="Tarihe göre filtrele" className={formInputClass} type="date" value={date} onChange={(event) => setDate(event.target.value)} />
         </div>
-        <DataTable columns={columns} data={filteredItems} />
+        {isLoading ? <p className="py-8 text-center text-sm text-gray-500">Muayeneler yükleniyor...</p> : error ? <p className="py-8 text-center text-sm text-red-600">{error}</p> : <DataTable columns={columns} data={items} />}
       </div>
       <ConfirmActionModal
-        confirmLabel={pendingAction?.type === 'delete' ? 'Taslağı Sil' : 'Onayla'}
-        description={pendingAction?.type === 'delete' ? 'Bu işlem geri alınamaz.' : 'Kayıt durumu güncellenecek, klinik geçmiş verileri korunacaktır.'}
-        isConfirmDisabled={Boolean(isReasonInvalid)}
+        confirmLabel={pendingAction?.type === 'delete' ? 'Taslağı Arşivle' : 'Onayla'}
+        description={pendingAction?.type === 'delete' ? 'Taslak kalıcı silinmez; durumu İptal olarak arşivlenir.' : 'Kayıt durumu güncellenecek, klinik geçmiş verileri korunacaktır.'}
+        isConfirmDisabled={Boolean(isReasonInvalid) || busy}
         isOpen={Boolean(pendingAction)}
-        title={pendingAction?.type === 'delete' ? 'Taslak muayene silinsin mi?' : 'Muayene durumu güncellensin mi?'}
+        title={pendingAction?.type === 'delete' ? 'Taslak muayene arşivlensin mi?' : 'Muayene durumu güncellensin mi?'}
         variant={pendingAction?.type === 'delete' ? 'danger' : 'warning'}
         onCancel={closeModal}
         onConfirm={pendingAction?.type === 'delete' ? deleteDraft : updateStatusWithReason}

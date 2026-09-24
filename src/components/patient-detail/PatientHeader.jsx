@@ -1,6 +1,6 @@
-import { ArrowLeft, FilePlus, MoreHorizontal, Pencil } from 'lucide-react'
+import { ArrowLeft, FilePlus, Pencil } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { outlineButtonClass, primaryButtonClass, textButtonClass } from '../../styles/uiClasses'
+import { outlineButtonClass, primaryButtonClass } from '../../styles/uiClasses'
 
 const returnTextMap = {
   Hastalar: 'Hastalara Dön',
@@ -23,8 +23,7 @@ export default function PatientHeader({ patient, returnLabel = 'Hastalar', retur
       </div>
       <div className="flex flex-wrap items-center justify-end gap-2 max-[760px]:w-full max-[760px]:justify-start">
         <button className={primaryButtonClass} type="button" onClick={onStartNewVisit}><FilePlus size={17} />Yeni Muayene Başlat</button>
-        <button className={outlineButtonClass} type="button"><Pencil size={17} />Hasta Bilgilerini Düzenle</button>
-        <button aria-label="Diğer hasta işlemleri" className={`${textButtonClass} h-9 w-9 p-0`} type="button"><MoreHorizontal size={18} /></button>
+        <button className={`${outlineButtonClass} opacity-60`} disabled title="Hasta düzenleme henüz uygulanmadı." type="button"><Pencil size={17} />Hasta Bilgilerini Düzenle</button>
       </div>
     </div>
   )

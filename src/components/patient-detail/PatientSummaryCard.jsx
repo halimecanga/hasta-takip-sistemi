@@ -28,11 +28,17 @@ export default function PatientSummaryCard({ patient }) {
 
   const badges = [
     patient.status,
-    patient.allergy !== 'Yok' && 'Alerji Var',
-    patient.chronicDisease !== 'Yok' && 'Kronik Hastalık',
+  
+    patient.allergy &&
+      patient.allergy !== 'Yok' &&
+      'Alerji Var',
+  
+    patient.chronicDisease &&
+      patient.chronicDisease !== 'Yok' &&
+      'Kronik Hastalık',
+  
     patient.paymentStatus,
   ].filter(Boolean)
-
   return (
     <section className={`${paddedCardClass} mb-5`}>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">

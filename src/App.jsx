@@ -1,6 +1,4 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
-import { AppointmentProvider } from './context/AppointmentContext'
-import { StaffProvider } from './context/StaffContext'
 import AdminLayout from './layouts/AdminLayout'
 import ActivityLogDetail from './pages/ActivityLogDetail'
 import AddAppointment from './pages/AddAppointment'
@@ -11,6 +9,7 @@ import Examinations from './pages/Examinations'
 import Logs from './pages/Logs'
 import Patients from './pages/Patients'
 import PatientDetail from './pages/PatientDetail'
+import AddPatient from './pages/AddPatient'
 import Prescriptions from './pages/Prescriptions'
 import PrescriptionDetail from './pages/PrescriptionDetail'
 import PriceDetail from './pages/PriceDetail'
@@ -26,14 +25,13 @@ import TestDetail from './pages/TestDetail'
 
 export default function App() {
   return (
-    <AppointmentProvider>
-      <StaffProvider>
-        <Routes>
+    <Routes>
           <Route element={<AdminLayout />}>
             <Route index element={<Dashboard />} />
             <Route path="randevular" element={<Appointments />} />
             <Route path="randevular/yeni" element={<AddAppointment />} />
             <Route path="hastalar" element={<Patients />} />
+            <Route path="hastalar/yeni" element={<AddPatient />} />
             <Route path="hastalar/:id" element={<PatientDetail />} />
             <Route path="muayeneler" element={<Examinations />} />
             <Route path="receteler" element={<Prescriptions />} />
@@ -54,7 +52,5 @@ export default function App() {
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-      </StaffProvider>
-    </AppointmentProvider>
   )
 }

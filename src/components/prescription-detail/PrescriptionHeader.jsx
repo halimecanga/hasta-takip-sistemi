@@ -23,8 +23,8 @@ export default function PrescriptionHeader({ prescription, editMode, onEdit, onC
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-end gap-2 max-[760px]:w-full max-[760px]:justify-start">
-        <button className={outlineButtonClass} type="button"><Printer size={17} />Yazdır</button>
-        <button className={outlineButtonClass} type="button"><Download size={17} />PDF İndir</button>
+        <button className={outlineButtonClass} type="button" onClick={() => window.print()}><Printer size={17} />Yazdır</button>
+        <button className={`${outlineButtonClass} opacity-60`} disabled title="PDF indirme henüz uygulanmadı." type="button"><Download size={17} />PDF yok</button>
         <button className={primaryButtonClass} disabled={editMode} type="button" onClick={onEdit}><Pencil size={17} />Reçeteyi Düzenle</button>
         {canCancel && (
           <RowActionsMenu

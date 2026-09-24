@@ -1,5 +1,6 @@
 import { FilePlus, Plus, Save, Trash2, X } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { api, patientsApi, pricesApi } from '../../services/api'
 import { formGridClass, formInputClass, formLabelClass, outlineButtonClass, paddedCardClass, primaryButtonClass, textareaClass } from '../../styles/uiClasses'
 
 const doctorName = 'Dr. Cumhur Kesemenli'
@@ -7,7 +8,16 @@ const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png']
 
 const toNumber = (value) => Math.max(0, Number(value || 0))
 const formatCurrency = (value) => `₺${Math.max(0, value).toLocaleString('tr-TR')}`
-const today = '2026-06-05'
+const getTodayIso = () => {
+  const today = new Date()
+  const timezoneOffset = today.getTimezoneOffset() * 60 * 1000
+
+  return new Date(today.getTime() - timezoneOffset)
+    .toISOString()
+    .split('T')[0]
+}
+
+const today = getTodayIso()
 
 const FieldError = ({ id, message }) => message ? <span className="mt-1 text-[10px] font-semibold text-red-600" id={id}>{message}</span> : null
 
@@ -144,6 +154,17 @@ export default function NewExaminationForm({ patient, appointment, onCancel, onS
   const [errors, setErrors] = useState({})
   const [documents, setDocuments] = useState([])
   const [fileError, setFileError] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
+  const [services, setServices] = useState(['Genel Muayene', 'Kontrol Muayenesi', 'Dahiliye Muayenesi'])
+
+  useEffect(() => {
+    pricesApi.list({ status: 'Aktif' }).then((items) => {
+      if (Array.isArray(items) && items.length > 0) {
+        setServices(items.map((item) => item.name))
+      }
+    }).catch(() => {})
+  }, [])
 
   const payable = useMemo(() => Math.max(0, toNumber(form.total) - toNumber(form.discount)), [form.discount, form.total])
   const paid = useMemo(() => Math.min(toNumber(form.paid), payable), [form.paid, payable])
@@ -169,9 +190,51 @@ export default function NewExaminationForm({ patient, appointment, onCancel, onS
     return Object.keys(nextErrors).length === 0
   }
 
-  const submit = (status) => {
+  const submit = async (status) => {
     if (!validate()) return
-    onSave(createVisitFromForm(form, status, documents))
+  
+    try {
+      setIsSaving(true)
+      setSaveError('')
+  
+      const data = await patientsApi.createExamination(patient.id, {
+        ...form,
+        status,
+        appointmentId: appointment?.databaseId || null,
+      })
+
+      if (documents.length > 0) {
+        await api.upload('examination', data.examination.id, documents.map((document) => document.file).filter(Boolean))
+      }
+  
+      const localVisit = createVisitFromForm(
+        form,
+        status,
+        documents
+      )
+  
+      const displayDate = new Date(
+        `${data.examination.date}T00:00:00`
+      ).toLocaleDateString('tr-TR', {
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+      })
+  
+      const savedVisit = {
+        ...localVisit,
+        ...data.examination,
+        date: displayDate,
+        updatedAt: displayDate,
+        payment: data.examination.payment || localVisit.payment,
+      }
+  
+      onSave(savedVisit)
+    } catch (error) {
+      setSaveError(error.message)
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const handleFiles = (event) => {
@@ -186,6 +249,7 @@ export default function NewExaminationForm({ patient, appointment, onCancel, onS
         name: file.name,
         kind: file.type === 'application/pdf' ? 'PDF' : file.type === 'image/png' ? 'PNG' : 'JPG',
         size: `${Math.max(1, Math.round(file.size / 1024))} KB`,
+        file,
       })
     })
     if (!invalid) setFileError('')
@@ -209,6 +273,11 @@ export default function NewExaminationForm({ patient, appointment, onCancel, onS
           <div className="rounded-[10px] bg-gray-50 p-3 text-xs text-gray-700">Doktor: {doctorName}</div>
         </div>
       </section>
+      {saveError && (
+  <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+    {saveError}
+  </div>
+)}
 
       <Section title="Randevu ve Muayene Bilgileri">
         <div className={formGridClass}>
@@ -284,14 +353,38 @@ export default function NewExaminationForm({ patient, appointment, onCancel, onS
                 </div>
               ))}
             </div>
-            <button className={`${outlineButtonClass} mt-3`} type="button" onClick={() => setForm((current) => ({ ...current, medicines: [...current.medicines, { ...emptyMedicine }] }))}><Plus size={16} />İlaç Ekle</button>
+            <button
+  className={outlineButtonClass}
+  disabled={isSaving}
+  type="button"
+  onClick={() => submit('Taslak')}
+>
+  <Save size={16} />
+
+  {isSaving ? 'Kaydediliyor...' : 'Taslak Kaydet'}
+</button>
+
+<button
+  className={primaryButtonClass}
+  disabled={isSaving}
+  type="button"
+  onClick={() => submit('Tamamlandı')}
+>
+  <Save size={16} />
+
+  {isSaving ? 'Kaydediliyor...' : 'Muayeneyi Tamamla'}
+</button>
           </>
         )}
       </Section>
 
       <Section title="Ödeme">
         <div className={formGridClass}>
-          <InputField id="service" label="Hizmet / İşlem Adı" value={form.service} onChange={(event) => update('service', event.target.value)} />
+          <InputField id="service" label="Hizmet / İşlem Adı">
+            <select className={formInputClass} id="service" value={form.service} onChange={(event) => update('service', event.target.value)}>
+              {services.map((option) => <option key={option}>{option}</option>)}
+            </select>
+          </InputField>
           <InputField id="total" label="Toplam Tutar" type="number" min="0" value={form.total} onChange={(event) => update('total', event.target.value)} />
           <InputField id="discount" label="İndirim" type="number" min="0" value={form.discount} onChange={(event) => update('discount', event.target.value)} />
           <InputField id="payable" label="Ödenecek Tutar" disabled value={formatCurrency(payable)} />

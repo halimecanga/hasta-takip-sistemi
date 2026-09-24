@@ -1,5 +1,6 @@
 import { AlertCircle, Banknote, CheckCircle2, ClipboardPenLine, CreditCard, Download, Eye, FileText, Landmark, Plus, Printer } from 'lucide-react'
 import StatusBadge from '../StatusBadge'
+import { documentDownloadUrl, documentViewUrl } from '../../services/api'
 import { outlineButtonClass, paddedCardClass, primaryButtonClass, sectionHeadingClass, textButtonClass } from '../../styles/uiClasses'
 import VisitTabs from './VisitTabs'
 
@@ -64,7 +65,7 @@ function VisitStatusPanel({ visit }) {
           <p className="mt-1 text-[11px] font-semibold">{detail}</p>
         </div>
       </div>
-      <button className={panel.button === 'primary' ? primaryButtonClass : outlineButtonClass} type="button">{panel.action}</button>
+      <button className={`${panel.button === 'primary' ? primaryButtonClass : outlineButtonClass} opacity-60`} disabled title="Bu işlem mevcut görüntüleme ekranından yapılmaz. Taslak veya bekleyen kayıt için Muayeneler sayfasındaki Devam Et kullanın." type="button">{panel.action}</button>
     </div>
   )
 }
@@ -106,7 +107,7 @@ function NotesTab({ visit }) {
     <div>
       <div className="mb-4 flex items-center justify-between gap-3">
         <h3 className={sectionHeadingClass}>Tedavi Notları</h3>
-        <button className={outlineButtonClass} type="button"><Plus size={16} />Yeni Not Ekle</button>
+        <button className={`${outlineButtonClass} opacity-60`} disabled title="Mevcut muayeneye sonradan not ekleme henüz uygulanmadı. Yeni notlar muayene kaydı sırasında eklenir." type="button"><Plus size={16} />Yeni Not Ekle</button>
       </div>
       <div className="space-y-3">
         {visit.treatmentNotes.map((note) => (
@@ -142,9 +143,8 @@ function PrescriptionTab({ visit }) {
         </table>
       </div>
       <div className="flex flex-wrap gap-2">
-        <button className={outlineButtonClass} type="button"><Eye size={16} />Reçeteyi Görüntüle</button>
-        <button className={outlineButtonClass} type="button"><Printer size={16} />Yazdır</button>
-        <button className={outlineButtonClass} type="button"><Download size={16} />PDF İndir</button>
+        <button className={outlineButtonClass} type="button" onClick={() => window.print()}><Printer size={16} />Yazdır</button>
+        <button className={`${outlineButtonClass} opacity-60`} disabled title="PDF indirme henüz uygulanmadı." type="button"><Download size={16} />PDF yok</button>
       </div>
     </div>
   )
@@ -193,8 +193,8 @@ function DocumentsTab({ visit }) {
             <strong className="block truncate text-xs text-gray-900">{document.name}</strong>
             <span className="mt-1 block text-[10px] text-gray-500">{document.type} - {document.size} - {document.uploadedAt}</span>
           </div>
-          <button aria-label={`${document.name} görüntüle`} className={textButtonClass} type="button"><Eye size={15} /></button>
-          <button aria-label={`${document.name} indir`} className={textButtonClass} type="button"><Download size={15} /></button>
+          <a aria-label={`${document.name} görüntüle`} className={textButtonClass} href={document.url || documentViewUrl(document.id)} rel="noreferrer" target="_blank"><Eye size={15} /></a>
+          <a aria-label={`${document.name} indir`} className={textButtonClass} href={document.downloadUrl || documentDownloadUrl(document.id)}><Download size={15} /></a>
         </article>
       ))}
     </div>

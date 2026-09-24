@@ -1,5 +1,6 @@
 import { Download, Eye, FileText } from 'lucide-react'
 import StatusBadge from '../StatusBadge'
+import { documentDownloadUrl, documentViewUrl } from '../../services/api'
 import { paddedCardClass, textButtonClass } from '../../styles/uiClasses'
 
 export default function StaffDocuments({ staff }) {
@@ -29,12 +30,12 @@ export default function StaffDocuments({ staff }) {
                 <td className="px-3 py-3"><StatusBadge status={document.status} /></td>
                 <td className="py-3 pl-3">
                   <div className="flex justify-end gap-1">
-                    <button aria-label={`${document.name} belgesini görüntüle`} className={`${textButtonClass} h-8 w-8 p-0`} title="Görüntüle" type="button">
+                    <a aria-label={`${document.name} belgesini görüntüle`} className={`${textButtonClass} h-8 w-8 p-0`} href={document.url || documentViewUrl(document.id)} rel="noreferrer" target="_blank" title="Görüntüle">
                       <Eye size={15} />
-                    </button>
-                    <button aria-label={`${document.name} belgesini indir`} className={`${textButtonClass} h-8 w-8 p-0`} title="İndir" type="button">
+                    </a>
+                    <a aria-label={`${document.name} belgesini indir`} className={`${textButtonClass} h-8 w-8 p-0`} href={document.downloadUrl || documentDownloadUrl(document.id)} title="İndir">
                       <Download size={15} />
-                    </button>
+                    </a>
                   </div>
                 </td>
               </tr>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Eye, FileEdit, Trash2, XCircle } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import ConfirmActionModal from '../components/ConfirmActionModal'
@@ -7,38 +7,40 @@ import InlineNotification from '../components/InlineNotification'
 import PageTitle from '../components/PageTitle'
 import RowActionsMenu from '../components/RowActionsMenu'
 import StatusBadge from '../components/StatusBadge'
-import { prescriptions } from '../data/mockData'
+import { prescriptionsApi } from '../services/api'
 import { formInputClass, paddedCardClass, textButtonClass } from '../styles/uiClasses'
 
 const cancelReasons = ['Yanlış ilaç seçimi', 'Doz değişikliği', 'Hasta intoleransı', 'Çift reçete', 'Diğer']
 
-const draftPrescription = {
-  id: 'REC-2026-DRAFT',
-  patientNo: 'HT-1042',
-  visitId: 'DOS-2026-003',
-  patient: 'Ayşe Yılmaz',
-  count: 1,
-  date: '05 Haz 2026',
-  status: 'Taslak',
-}
-
 export default function Prescriptions() {
-  const [items, setItems] = useState(() => [...prescriptions.map((item) => ({ ...item })), draftPrescription])
+  const [items, setItems] = useState([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
+  const [doctor, setDoctor] = useState('')
+  const [date, setDate] = useState('')
   const [pendingAction, setPendingAction] = useState(null)
   const [reason, setReason] = useState('')
   const [note, setNote] = useState('')
   const [notification, setNotification] = useState(null)
+  const [busy, setBusy] = useState(false)
 
-  const filteredItems = useMemo(() => {
-    const normalizedSearch = search.trim().toLocaleLowerCase('tr-TR')
-    return items.filter((item) => {
-      const matchesSearch = !normalizedSearch || [item.patient, item.id, item.status]
-        .some((value) => value.toLocaleLowerCase('tr-TR').includes(normalizedSearch))
-      return matchesSearch && (!status || item.status === status)
-    })
-  }, [items, search, status])
+  const load = async () => {
+    try {
+      setIsLoading(true)
+      setError('')
+      setItems(await prescriptionsApi.list({ search, status, doctor, date }))
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    load()
+  }, [search, status, doctor, date])
 
   const closeModal = () => {
     setPendingAction(null)
@@ -46,23 +48,36 @@ export default function Prescriptions() {
     setNote('')
   }
 
-  const showNoop = () => setNotification({ message: 'Bu işlem backend/form entegrasyonu ile etkinleştirilecektir.', tone: 'warning' })
-
-  const deleteDraft = () => {
-    setItems((current) => current.filter((item) => item.id !== pendingAction.item.id))
-    setNotification({ message: 'Taslak reçete silindi.', tone: 'success' })
-    closeModal()
+  const deleteDraft = async () => {
+    try {
+      setBusy(true)
+      await prescriptionsApi.remove(pendingAction.item.id)
+      setNotification({ message: 'Taslak reçete arşivlendi.', tone: 'success' })
+      closeModal()
+      await load()
+    } catch (requestError) {
+      setNotification({ message: requestError.message, tone: 'error' })
+    } finally {
+      setBusy(false)
+    }
   }
 
-  const cancelPrescription = () => {
-    const cancellationReason = reason === 'Diğer' ? note.trim() : reason
-    setItems((current) => current.map((item) => (
-      item.id === pendingAction.item.id
-        ? { ...item, status: 'İptal Edildi', cancellationReason }
-        : item
-    )))
-    setNotification({ message: pendingAction.message, tone: 'warning' })
-    closeModal()
+  const cancelPrescription = async () => {
+    try {
+      setBusy(true)
+      await prescriptionsApi.status(pendingAction.item.id, {
+        status: 'İptal',
+        reason,
+        note,
+      })
+      setNotification({ message: pendingAction.message, tone: 'warning' })
+      closeModal()
+      await load()
+    } catch (requestError) {
+      setNotification({ message: requestError.message, tone: 'error' })
+    } finally {
+      setBusy(false)
+    }
   }
 
   const isReasonInvalid = pendingAction?.requiresReason && (!reason || (reason === 'Diğer' && !note.trim()))
@@ -78,30 +93,17 @@ export default function Prescriptions() {
       render: (row) => {
         const viewItem = { label: 'Görüntüle', icon: <Eye size={15} />, tone: 'neutral', to: `/receteler/${row.id}` }
         const editItem = { label: 'Düzenle', icon: <FileEdit size={15} />, tone: 'neutral', to: `/receteler/${row.id}?duzenle=true` }
-        const draftEditItem = { label: 'Düzenle', icon: <FileEdit size={15} />, tone: 'neutral', onSelect: showNoop }
         const itemsForStatus = {
-          Taslak: [
-            draftEditItem,
-            { label: 'Sil', icon: <Trash2 size={15} />, tone: 'danger', onSelect: () => setPendingAction({ type: 'delete', item: row }) },
-          ],
-          Aktif: [
-            viewItem,
-            editItem,
-            { label: 'İptal Et', icon: <XCircle size={15} />, tone: 'warning', onSelect: () => setPendingAction({ type: 'cancel', item: row, message: 'Reçete iptal edildi.', requiresReason: true }) },
-          ],
-          Tamamlandı: [
-            viewItem,
-            { label: 'Geçersiz İşaretle', icon: <XCircle size={15} />, tone: 'warning', onSelect: () => setPendingAction({ type: 'cancel', item: row, message: 'Reçete geçersiz işaretlendi.', requiresReason: true }) },
-          ],
+          Taslak: [editItem, { label: 'Arşivle', icon: <Trash2 size={15} />, tone: 'danger', onSelect: () => setPendingAction({ type: 'delete', item: row }) }],
+          Aktif: [viewItem, editItem, { label: 'İptal Et', icon: <XCircle size={15} />, tone: 'warning', onSelect: () => setPendingAction({ type: 'cancel', item: row, message: 'Reçete iptal edildi.', requiresReason: true }) }],
+          Tamamlandı: [viewItem, { label: 'Geçersiz İşaretle', icon: <XCircle size={15} />, tone: 'warning', onSelect: () => setPendingAction({ type: 'cancel', item: row, message: 'Reçete geçersiz işaretlendi.', requiresReason: true }) }],
           'Süresi Doldu': [viewItem],
-          'İptal Edildi': [viewItem],
+          İptal: [viewItem],
         }
 
         return (
           <div className="flex items-center gap-1">
-            {row.status === 'Taslak'
-              ? <button className={textButtonClass} type="button" onClick={showNoop}><FileEdit size={15} />Düzenle</button>
-              : <Link className={textButtonClass} to={`/receteler/${row.id}`}><Eye size={15} />Görüntüle</Link>}
+            <Link className={textButtonClass} to={`/receteler/${row.id}`}><Eye size={15} />Görüntüle</Link>
             <RowActionsMenu label={`${row.patient} reçete işlemleri`} items={itemsForStatus[row.status] || [viewItem]} />
           </div>
         )
@@ -114,21 +116,26 @@ export default function Prescriptions() {
       <PageTitle title="Reçeteler" subtitle="Düzenlenen reçeteleri ve durumlarını takip edin." />
       <InlineNotification message={notification?.message} tone={notification?.tone} onClose={() => setNotification(null)} />
       <div className={paddedCardClass}>
-        <div className="mb-[18px] grid grid-cols-[minmax(220px,1fr)_180px] gap-3 max-[640px]:grid-cols-1">
+        <div className="mb-[18px] grid grid-cols-[minmax(220px,1.4fr)_170px_170px_170px] gap-3 max-[900px]:grid-cols-2 max-[640px]:grid-cols-1">
           <input aria-label="Hasta veya reçete ara" className={formInputClass} placeholder="Hasta veya reçete ara..." type="search" value={search} onChange={(event) => setSearch(event.target.value)} />
+          <select aria-label="Doktora göre filtrele" className={formInputClass} value={doctor} onChange={(event) => setDoctor(event.target.value)}>
+            <option value="">Tüm Doktorlar</option>
+            <option>Dr. Cumhur Kesemenli</option>
+          </select>
           <select aria-label="Reçete durumuna göre filtrele" className={formInputClass} value={status} onChange={(event) => setStatus(event.target.value)}>
             <option value="">Tüm Durumlar</option>
-            {['Taslak', 'Aktif', 'Tamamlandı', 'Süresi Doldu', 'İptal Edildi'].map((option) => <option key={option}>{option}</option>)}
+            {['Taslak', 'Aktif', 'Pasif', 'Tamamlandı', 'Süresi Doldu', 'İptal'].map((option) => <option key={option}>{option}</option>)}
           </select>
+          <input aria-label="Tarihe göre filtrele" className={formInputClass} type="date" value={date} onChange={(event) => setDate(event.target.value)} />
         </div>
-        <DataTable columns={columns} data={filteredItems} />
+        {isLoading ? <p className="py-8 text-center text-sm text-gray-500">Reçeteler yükleniyor...</p> : error ? <p className="py-8 text-center text-sm text-red-600">{error}</p> : <DataTable columns={columns} data={items} />}
       </div>
       <ConfirmActionModal
-        confirmLabel={pendingAction?.type === 'delete' ? 'Taslağı Sil' : 'Onayla'}
-        description={pendingAction?.type === 'delete' ? 'Bu işlem geri alınamaz.' : 'Reçete durumu iptal edildi olarak güncellenecek.'}
-        isConfirmDisabled={Boolean(isReasonInvalid)}
+        confirmLabel={pendingAction?.type === 'delete' ? 'Taslağı Arşivle' : 'Onayla'}
+        description={pendingAction?.type === 'delete' ? 'Taslak kalıcı silinmez; durumu İptal olarak arşivlenir.' : 'Reçete durumu İptal olarak güncellenecek.'}
+        isConfirmDisabled={Boolean(isReasonInvalid) || busy}
         isOpen={Boolean(pendingAction)}
-        title={pendingAction?.type === 'delete' ? 'Taslak reçete silinsin mi?' : 'Reçete iptal edilsin mi?'}
+        title={pendingAction?.type === 'delete' ? 'Taslak reçete arşivlensin mi?' : 'Reçete iptal edilsin mi?'}
         variant={pendingAction?.type === 'delete' ? 'danger' : 'warning'}
         onCancel={closeModal}
         onConfirm={pendingAction?.type === 'delete' ? deleteDraft : cancelPrescription}
